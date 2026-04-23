@@ -1,21 +1,16 @@
 import { useMemo, useState } from 'react'
-import type { MoodColor, MoodEntry } from '../../lib/storage/types'
-
-const moodOptions: Array<{ color: MoodColor; label: string; caption: string }> = [
-  { color: 'red', label: 'Rood', caption: 'Overprikkeld of leeg' },
-  { color: 'orange', label: 'Oranje', caption: 'Onrustig, maar nog op de been' },
-  { color: 'yellow', label: 'Geel', caption: 'Neutraal of zoekend' },
-  { color: 'lime', label: 'Lichtgroen', caption: 'Redelijk in balans' },
-  { color: 'green', label: 'Groen', caption: 'Rustig, helder en stabiel' },
-]
+import { getMoodOptions } from '../../lib/i18n'
+import type { AppLanguage, MoodColor, MoodEntry } from '../../lib/storage/types'
 
 interface MoodCheckCardProps {
+  language: AppLanguage
   entries: MoodEntry[]
   today: string
   onSave: (entry: MoodEntry) => void
 }
 
-export function MoodCheckCard({ entries, today, onSave }: MoodCheckCardProps) {
+export function MoodCheckCard({ language, entries, today, onSave }: MoodCheckCardProps) {
+  const moodOptions = getMoodOptions(language) as Array<{ color: MoodColor; label: string; caption: string }>
   const currentEntry = entries.find((entry) => entry.date === today)
   const [selectedColor, setSelectedColor] = useState<MoodColor>(currentEntry?.color ?? 'yellow')
   const [note, setNote] = useState(currentEntry?.note ?? '')
@@ -31,10 +26,10 @@ export function MoodCheckCard({ entries, today, onSave }: MoodCheckCardProps) {
     <section className="panel card-stack">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Dagelijkse check</p>
-          <h2>Hoe voel je je vandaag?</h2>
+          <p className="eyebrow">{language === 'en' ? 'Daily check-in' : 'Dagelijkse check'}</p>
+          <h2>{language === 'en' ? 'How are you today?' : 'Hoe voel je je vandaag?'}</h2>
         </div>
-        <span className="soft-badge">Lokaal opgeslagen</span>
+        <span className="soft-badge">{language === 'en' ? 'Stored locally' : 'Lokaal opgeslagen'}</span>
       </div>
 
       <div className="mood-grid">
@@ -52,12 +47,12 @@ export function MoodCheckCard({ entries, today, onSave }: MoodCheckCardProps) {
       </div>
 
       <label className="field">
-        <span>Korte notitie</span>
+        <span>{language === 'en' ? 'Short note' : 'Korte notitie'}</span>
         <textarea
           value={note}
           onChange={(event) => setNote(event.target.value)}
           rows={3}
-          placeholder="Wat viel op vandaag?"
+          placeholder={language === 'en' ? 'What stood out today?' : 'Wat viel op vandaag?'}
         />
       </label>
 
@@ -68,20 +63,20 @@ export function MoodCheckCard({ entries, today, onSave }: MoodCheckCardProps) {
           onSave({
             date: today,
             color: selectedColor,
-            label: moodOptions.find((option) => option.color === selectedColor)?.label ?? 'Onbekend',
+            label: moodOptions.find((option) => option.color === selectedColor)?.label ?? (language === 'en' ? 'Unknown' : 'Onbekend'),
             note,
           })
         }
       >
-        Bewaar check-in
+        {language === 'en' ? 'Save check-in' : 'Bewaar check-in'}
       </button>
 
       <div className="month-strip">
         <div className="section-heading compact">
-          <h3>Deze maand</h3>
-          <span>{monthlySummary.length} ingevoerd</span>
+          <h3>{language === 'en' ? 'This month' : 'Deze maand'}</h3>
+          <span>{monthlySummary.length} {language === 'en' ? 'saved' : 'ingevoerd'}</span>
         </div>
-        <div className="calendar-grid" aria-label="Maandoverzicht stemming">
+        <div className="calendar-grid" aria-label={language === 'en' ? 'Monthly mood overview' : 'Maandoverzicht stemming'}>
           {monthCells.map((cell) => (
             <div
               key={cell.key}

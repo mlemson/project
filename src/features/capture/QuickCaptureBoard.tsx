@@ -1,26 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { DEFAULT_TASK_DURATION_MINUTES, buildTaskActions, createDefaultIntegrations, taskDraftFromCapture } from '../../lib/tasks/taskIntelligence'
-import type { CaptureColor, QuickCaptureLink, QuickCaptureNode, TaskItem } from '../../lib/storage/types'
-
-const captureColors: Array<{ id: CaptureColor; label: string }> = [
-  { id: 'sand', label: 'Zand' },
-  { id: 'coral', label: 'Koraal' },
-  { id: 'sky', label: 'Blauw' },
-  { id: 'mint', label: 'Mint' },
-  { id: 'lavender', label: 'Lila' },
-]
+import type { AppLanguage, CaptureColor, QuickCaptureLink, QuickCaptureNode, TaskItem } from '../../lib/storage/types'
 
 interface QuickCaptureBoardProps {
+  language: AppLanguage
   nodes: QuickCaptureNode[]
   links: QuickCaptureLink[]
   onAddNode: () => void
   onUpdateNode: (nodeId: string, patch: Partial<QuickCaptureNode>) => void
   onDeleteNode: (nodeId: string) => void
   onToggleLink: (fromId: string, toId: string) => void
-  onConvertToTask: (task: Omit<TaskItem, 'id' | 'completed' | 'createdAt'>) => void
+  onConvertToTask: (task: Omit<TaskItem, 'id' | 'completed' | 'createdAt' | 'completionDate' | 'completionHistory'>) => void
 }
 
 export function QuickCaptureBoard({
+  language,
   nodes,
   links,
   onAddNode,
@@ -41,6 +35,21 @@ export function QuickCaptureBoard({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [linkSourceId, setLinkSourceId] = useState<string | null>(null)
   const nodesById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes])
+  const captureColors: Array<{ id: CaptureColor; label: string }> = language === 'en'
+    ? [
+        { id: 'sand', label: 'Sand' },
+        { id: 'coral', label: 'Coral' },
+        { id: 'sky', label: 'Blue' },
+        { id: 'mint', label: 'Mint' },
+        { id: 'lavender', label: 'Lavender' },
+      ]
+    : [
+        { id: 'sand', label: 'Zand' },
+        { id: 'coral', label: 'Koraal' },
+        { id: 'sky', label: 'Blauw' },
+        { id: 'mint', label: 'Mint' },
+        { id: 'lavender', label: 'Lila' },
+      ]
 
   const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
     if (!boardRef.current) {
@@ -76,17 +85,19 @@ export function QuickCaptureBoard({
     <section className="panel card-stack wide-panel">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Ideeen</p>
-          <h2>Losse gedachten vangen, slepen en koppelen</h2>
+          <p className="eyebrow">{language === 'en' ? 'Ideas' : 'Ideeen'}</p>
+          <h2>{language === 'en' ? 'Capture, move and connect loose thoughts' : 'Losse gedachten vangen, slepen en koppelen'}</h2>
         </div>
         <button className="primary-button" type="button" onClick={onAddNode}>
-          Nieuwe gedachte
+          {language === 'en' ? 'New note' : 'Nieuwe gedachte'}
         </button>
       </div>
 
       <p className="helper-copy">
-        Sleep kaarten rond, maak ze groter of kleiner, en koppel ideeën aan elkaar als eenvoudige mindmap.
-        {linkSourceId ? ' Kies nu een tweede idee om direct een lijn te maken.' : ''}
+        {language === 'en'
+          ? 'Drag cards around, resize them and connect ideas in a lightweight mind map.'
+          : 'Sleep kaarten rond, maak ze groter of kleiner en koppel ideeen aan elkaar als eenvoudige mindmap.'}
+        {linkSourceId ? ` ${language === 'en' ? 'Choose a second idea to create the link.' : 'Kies nu een tweede idee om direct een lijn te maken.'}` : ''}
       </p>
 
       <div
@@ -120,6 +131,8 @@ export function QuickCaptureBoard({
         {nodes.map((node) => (
           <CaptureNodeCard
             key={node.id}
+            language={language}
+            captureColors={captureColors}
             node={node}
             selected={selectedNodeId === node.id}
             linkMode={linkSourceId !== null && linkSourceId !== node.id}
@@ -163,6 +176,7 @@ export function QuickCaptureBoard({
               onConvertToTask({
                 ...draft,
                 durationMinutes: DEFAULT_TASK_DURATION_MINUTES,
+                tracked: false,
                 integrations: createDefaultIntegrations(),
               })
             }}
@@ -174,6 +188,8 @@ export function QuickCaptureBoard({
 }
 
 interface CaptureNodeCardProps {
+  language: AppLanguage
+  captureColors: Array<{ id: CaptureColor; label: string }>
   node: QuickCaptureNode
   selected: boolean
   linkMode: boolean
@@ -187,6 +203,8 @@ interface CaptureNodeCardProps {
 }
 
 function CaptureNodeCard({
+  language,
+  captureColors,
   node,
   selected,
   linkMode,
@@ -200,9 +218,9 @@ function CaptureNodeCard({
 }: CaptureNodeCardProps) {
   const articleRef = useRef<HTMLElement | null>(null)
   const actions = buildTaskActions({
-    title: node.title || 'Los idee',
+    title: node.title || (language === 'en' ? 'Loose idea' : 'Los idee'),
     category: 'Quick Capture',
-    reminderHint: node.content || 'Werk dit idee later verder uit.',
+    reminderHint: node.content || (language === 'en' ? 'Work this out later.' : 'Werk dit idee later verder uit.'),
   })
 
   useEffect(() => {
@@ -222,7 +240,7 @@ function CaptureNodeCard({
       className={selected ? `capture-node selected ${node.color}` : `capture-node compact ${node.color}`}
     >
       <div className="capture-bar">
-        <button type="button" className="capture-handle capture-icon-handle" onMouseDown={onStartDrag} aria-label="Versleep idee">
+        <button type="button" className="capture-handle capture-icon-handle" onMouseDown={onStartDrag} aria-label={language === 'en' ? 'Drag idea' : 'Versleep idee'}>
           <span className="capture-handle-dot" />
           <span className="capture-handle-dot" />
           <span className="capture-handle-dot" />
@@ -241,7 +259,7 @@ function CaptureNodeCard({
             }
           }}
         >
-          <span className="capture-bar-title">{node.title || 'Nieuwe gedachte'}</span>
+          <span className="capture-bar-title">{node.title || (language === 'en' ? 'New note' : 'Nieuwe gedachte')}</span>
         </button>
       </div>
 
@@ -251,13 +269,13 @@ function CaptureNodeCard({
             className="capture-title"
             value={node.title}
             onChange={(event) => onChange({ title: event.target.value })}
-            placeholder="Titel"
+            placeholder={language === 'en' ? 'Title' : 'Titel'}
           />
           <textarea
             className="capture-text"
             value={node.content}
             onChange={(event) => onChange({ content: event.target.value })}
-            placeholder="Los idee, taak of gedachte"
+            placeholder={language === 'en' ? 'Loose idea, task or note' : 'Los idee, taak of gedachte'}
           />
           <div className="capture-color-row">
             {captureColors.map((color) => (
@@ -266,20 +284,19 @@ function CaptureNodeCard({
                 type="button"
                 className={color.id === node.color ? `color-chip ${color.id} active` : `color-chip ${color.id}`}
                 onClick={() => onChange({ color: color.id })}
-                aria-label={`Kies kleur ${color.label}`}
+                aria-label={`${language === 'en' ? 'Choose color' : 'Kies kleur'} ${color.label}`}
                 title={color.label}
               />
             ))}
           </div>
           <div className="capture-actions">
-            <button type="button" className="ghost-button" onClick={onConvertToTask}>Naar taak</button>
-            <button type="button" className="ghost-button" onClick={() => window.open(actions.calendarUrl, '_blank', 'noopener,noreferrer')}>Agenda</button>
+            <button type="button" className="ghost-button" onClick={onConvertToTask}>{language === 'en' ? 'Convert to task' : 'Naar taak'}</button>
+            <button type="button" className="ghost-button" onClick={() => window.open(actions.calendarUrl, '_blank', 'noopener,noreferrer')}>{language === 'en' ? 'Calendar' : 'Agenda'}</button>
             <button type="button" className="ghost-button" onClick={() => { window.location.href = actions.mailUrl }}>Mail</button>
-            <button type="button" className="ghost-button" onClick={() => void navigator.clipboard.writeText(actions.alarmText)}>Wekkertekst</button>
-            <button type="button" className={linkMode ? 'ghost-button accent-button' : 'ghost-button'} onClick={onToggleLink}>{linkMode ? 'Klaar voor koppelen' : 'Koppel'}</button>
-            <button type="button" className="ghost-button" onClick={onDelete}>Verwijder</button>
+            <button type="button" className={linkMode ? 'ghost-button accent-button' : 'ghost-button'} onClick={onToggleLink}>{linkMode ? (language === 'en' ? 'Ready to link' : 'Klaar voor koppelen') : (language === 'en' ? 'Link' : 'Koppel')}</button>
+            <button type="button" className="ghost-button" onClick={onDelete}>{language === 'en' ? 'Delete' : 'Verwijder'}</button>
           </div>
-          <button type="button" className="capture-resize-handle" onMouseDown={onResizeStart} aria-label="Resize kaart" />
+          <button type="button" className="capture-resize-handle" onMouseDown={onResizeStart} aria-label={language === 'en' ? 'Resize card' : 'Resize kaart'} />
         </>
       )}
     </article>

@@ -64,6 +64,22 @@ button {
   gap: 1.5rem;
 }
 
+.hero-card-compact {
+  gap: 1.1rem;
+}
+
+.hero-primary {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.hero-card-compact h1 {
+  font-size: clamp(2rem, 5vw, 3rem);
+}
+
 .hero-card h1,
 .section-heading h2 {
   margin: 0;
@@ -82,6 +98,41 @@ button {
   gap: 0.75rem;
   flex-wrap: wrap;
   margin-top: 1rem;
+}
+
+.settings-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.settings-card {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.settings-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.settings-tag {
+  border: 0;
+}
+
+.settings-category-form {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.settings-category-form input {
+  width: 100%;
+  border: 1px solid rgba(23, 32, 51, 0.12);
+  border-radius: 18px;
+  padding: 0.9rem 1rem;
+  background: rgba(255, 255, 255, 0.82);
 }
 
 .transfer-row .secondary-button {
@@ -154,7 +205,6 @@ button {
   gap: 0.75rem;
   overflow-x: auto;
   padding: 1rem 0;
-  scrollbar-width: none;
   -ms-overflow-style: none;
 }
 
@@ -289,6 +339,17 @@ button {
   align-self: center;
 }
 
+.icon-button {
+  width: 3rem;
+  height: 3rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.45rem;
+  line-height: 1;
+}
+
 .accent-button {
   border-color: rgba(63, 141, 99, 0.3);
   background: rgba(223, 239, 184, 0.85);
@@ -396,6 +457,29 @@ button {
 .action-row {
   display: grid;
   gap: 0.75rem;
+}
+
+.task-inline-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.weekday-picker {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.weekday-chip {
+  border: 1px solid rgba(23, 32, 51, 0.12);
+  border-radius: 999px;
+  padding: 0.55rem 0.8rem;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.weekday-chip.active {
+  background: #172033;
+  color: #fff8f0;
+  border-color: #172033;
 }
 
 .toggle-row {
@@ -528,6 +612,14 @@ button {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 1rem;
+}
+
+.compact-dashboard-grid .compact-widget {
+  min-height: 120px;
+}
+
+.compact-dashboard-grid .focus-hero-card {
+  min-height: 160px;
 }
 
 .dashboard-widget {

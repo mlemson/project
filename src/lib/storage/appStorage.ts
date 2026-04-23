@@ -1,21 +1,27 @@
 import type {
+  AppLanguage,
+  AppSettings,
   AppState,
   DashboardPanelId,
   DashboardWidgetId,
   FocusTimerState,
   MoodEntry,
+  OptionalFeatureId,
   ProfileId,
   ProfileState,
+  ProfileSettings,
   QuickCaptureNode,
   TaskItem,
 } from './types'
 import { createDefaultIntegrations } from '../tasks/taskIntelligence'
+import { getDefaultCategories } from '../i18n'
 
 const STORAGE_KEY = 'focus-flow-app-state'
 
 const seedState = (): AppState => ({
   today: new Date().toISOString().slice(0, 10),
   activeProfile: 'private',
+  settings: createDefaultSettings(),
   profiles: {
     private: createSeedProfile('private'),
     work: createSeedProfile('work'),
@@ -78,15 +84,14 @@ export function toggleTaskCompletion(state: AppState, taskId: string): AppState 
       [state.activeProfile]: {
         ...activeProfile,
         activeTimer: shouldResetTimer ? undefined : activeProfile.activeTimer,
-        tasks: activeProfile.tasks.map((task) =>
-          task.id === taskId
-            ? {
-                ...task,
-                completed: !task.completed,
-                completionDate: !task.completed ? state.today : undefined,
-              }
-            : task,
-        ),
+        tasks: activeProfile.tasks.map((task) => {
+          if (task.id !== taskId) {
+            return task
+          }
+
+          const shouldComplete = !isTaskDoneForToday(task, state.today)
+          return applyTaskCompletion(task, shouldComplete, state.today)
+        }),
       },
     },
   }
@@ -97,7 +102,7 @@ export function toggleTaskCompletion(state: AppState, taskId: string): AppState 
 
 export function addTask(
   state: AppState,
-  task: Omit<TaskItem, 'id' | 'completed' | 'createdAt'>,
+  task: Omit<TaskItem, 'id' | 'completed' | 'createdAt' | 'completionHistory'>,
 ): AppState {
   const activeProfile = getActiveProfile(state)
   const nextTask: TaskItem = {
@@ -105,6 +110,7 @@ export function addTask(
     id: createId('task'),
     completed: false,
     completionDate: undefined,
+    completionHistory: [],
     createdAt: new Date().toISOString(),
   }
   const nextState = {
@@ -355,6 +361,66 @@ export function deleteTask(state: AppState, taskId: string): AppState {
   return nextState
 }
 
+export function updateLanguage(state: AppState, language: AppLanguage): AppState {
+  const nextSettings: AppSettings = {
+    ...state.settings,
+    language,
+    profiles: {
+      private: normalizeProfileSettings(state.settings?.profiles?.private, 'private', language),
+      work: normalizeProfileSettings(state.settings?.profiles?.work, 'work', language),
+    },
+  }
+  const nextState = {
+    ...state,
+    settings: nextSettings,
+  }
+
+  persist(nextState)
+  return nextState
+}
+
+export function updateTaskCategories(state: AppState, profileId: ProfileId, categories: string[]): AppState {
+  const nextState = {
+    ...state,
+    settings: {
+      ...state.settings,
+      profiles: {
+        ...state.settings.profiles,
+        [profileId]: {
+          ...state.settings.profiles[profileId],
+          taskCategories: categories,
+        },
+      },
+    },
+  }
+
+  persist(nextState)
+  return nextState
+}
+
+export function toggleOptionalFeature(state: AppState, profileId: ProfileId, featureId: OptionalFeatureId): AppState {
+  const current = state.settings.profiles[profileId]
+  const enabledOptionalFeatures = current.enabledOptionalFeatures.includes(featureId)
+    ? current.enabledOptionalFeatures.filter((item) => item !== featureId)
+    : [...current.enabledOptionalFeatures, featureId]
+  const nextState = {
+    ...state,
+    settings: {
+      ...state.settings,
+      profiles: {
+        ...state.settings.profiles,
+        [profileId]: {
+          ...current,
+          enabledOptionalFeatures,
+        },
+      },
+    },
+  }
+
+  persist(nextState)
+  return nextState
+}
+
 export function addCaptureNode(state: AppState): AppState {
   const activeProfile = getActiveProfile(state)
   const nextNode: QuickCaptureNode = {
@@ -492,11 +558,14 @@ function createSeedProfile(profileId: ProfileId): ProfileState {
           title: 'Belangrijkste 3 werkdoelen kiezen',
           cadence: 'weekly',
           weeklyDay: 'monday',
+          weekdays: undefined,
           category: 'Werkfocus',
           durationMinutes: 30,
           reminderHint: 'Plan dit maandagochtend direct in je agenda',
           completed: false,
           completionDate: undefined,
+          completionHistory: [],
+          tracked: true,
           important: true,
           integrations: createDefaultIntegrations(),
           createdAt: new Date().toISOString(),
@@ -506,11 +575,14 @@ function createSeedProfile(profileId: ProfileId): ProfileState {
           title: 'Inbox en Slack 2x per dag verwerken',
           cadence: 'weekly',
           weeklyDay: 'monday',
+          weekdays: undefined,
           category: 'Communicatie',
           durationMinutes: 20,
           reminderHint: 'Zet twee vaste blokken om context switching te verminderen',
           completed: false,
           completionDate: undefined,
+          completionHistory: [],
+          tracked: false,
           important: false,
           integrations: createDefaultIntegrations(),
           createdAt: new Date().toISOString(),
@@ -544,11 +616,14 @@ function createSeedProfile(profileId: ProfileId): ProfileState {
         title: 'Weekplanning nalopen',
         cadence: 'weekly',
         weeklyDay: 'monday',
+        weekdays: undefined,
         category: 'Structuur',
         durationMinutes: 25,
         reminderHint: 'Zet een terugkerend agenda-item op maandag 09:00',
         completed: false,
         completionDate: undefined,
+        completionHistory: [],
+        tracked: true,
         important: true,
         integrations: createDefaultIntegrations(),
         createdAt: new Date().toISOString(),
@@ -558,11 +633,14 @@ function createSeedProfile(profileId: ProfileId): ProfileState {
         title: 'Waterfles vullen en klaarzetten',
         cadence: 'once',
         weeklyDay: undefined,
+        weekdays: undefined,
         category: 'Zelfzorg',
         durationMinutes: 10,
         reminderHint: 'Maak een korte telefoonreminder voor vanavond',
         completed: true,
         completionDate: new Date().toISOString().slice(0, 10),
+        completionHistory: [new Date().toISOString().slice(0, 10)],
+        tracked: false,
         important: false,
         integrations: createDefaultIntegrations(),
         createdAt: new Date().toISOString(),
@@ -572,11 +650,14 @@ function createSeedProfile(profileId: ProfileId): ProfileState {
         title: '10 minuten administratie',
         cadence: 'weekly',
         weeklyDay: 'wednesday',
+        weekdays: undefined,
         category: 'Huishouden',
         durationMinutes: 10,
         reminderHint: 'Plan in je kalender als blokje na het eten',
         completed: false,
         completionDate: undefined,
+        completionHistory: [],
+        tracked: false,
         important: false,
         integrations: createDefaultIntegrations(),
         createdAt: new Date().toISOString(),
@@ -622,9 +703,11 @@ function createSeedProfile(profileId: ProfileId): ProfileState {
 function normalizeState(state: AppState): AppState {
   if ('profiles' in state && state.profiles.private && state.profiles.work) {
     const now = Date.now()
+    const language = state.settings?.language === 'en' ? 'en' : 'nl'
     return {
       today: state.today,
       activeProfile: state.activeProfile ?? 'private',
+      settings: normalizeSettings(state.settings, language),
       profiles: {
         private: normalizeProfile(state.profiles.private, 'private', state.today, now),
         work: normalizeProfile(state.profiles.work, 'work', state.today, now),
@@ -640,8 +723,15 @@ function normalizeProfile(profile: ProfileState, profileId: ProfileId, today: st
     ? profile.tasks.map((task) => ({
         ...task,
         weeklyDay: task.weeklyDay,
+        weekdays: Array.isArray(task.weekdays) ? task.weekdays : task.weeklyDay ? [task.weeklyDay] : [],
         durationMinutes: Math.max(5, Number(task.durationMinutes) || 25),
         completionDate: task.completionDate,
+        completionHistory: Array.isArray(task.completionHistory)
+          ? task.completionHistory.filter((value) => typeof value === 'string')
+          : task.completionDate
+            ? [task.completionDate]
+            : [],
+        tracked: task.tracked ?? false,
         important: task.important ?? false,
         integrations: task.integrations ?? createDefaultIntegrations(),
         createdAt: task.createdAt ?? new Date().toISOString(),
@@ -778,14 +868,94 @@ function normalizeTimer(
 
 function completeTaskInCollection(tasks: TaskItem[], taskId: string, today: string): TaskItem[] {
   return tasks.map((task) =>
-    task.id === taskId && !task.completed
-      ? {
-          ...task,
-          completed: true,
-          completionDate: today,
-        }
+    task.id === taskId
+      ? applyTaskCompletion(task, true, today)
       : task,
   )
+}
+
+function applyTaskCompletion(task: TaskItem, completed: boolean, today: string): TaskItem {
+  const currentHistory = Array.isArray(task.completionHistory) ? task.completionHistory : []
+  const nextHistory = completed
+    ? Array.from(new Set([...currentHistory, today])).sort()
+    : currentHistory.filter((value) => value !== today && value !== task.completionDate)
+  const lastCompletion = nextHistory[nextHistory.length - 1]
+
+  return {
+    ...task,
+    completed,
+    completionDate: completed ? today : lastCompletion,
+    completionHistory: nextHistory,
+  }
+}
+
+function isTaskDoneForToday(task: TaskItem, today: string) {
+  if (task.cadence === 'once') {
+    return task.completed
+  }
+
+  if (task.cadence === 'daily') {
+    return task.completionHistory.includes(today)
+  }
+
+  return task.completionHistory.some((date) => getWeekKey(date) === getWeekKey(today))
+}
+
+function getWeekKey(date: string) {
+  const value = new Date(`${date}T12:00:00`)
+  const day = (value.getDay() + 6) % 7
+  value.setDate(value.getDate() - day + 3)
+  const firstThursday = new Date(value.getFullYear(), 0, 4)
+  const firstDay = (firstThursday.getDay() + 6) % 7
+  firstThursday.setDate(firstThursday.getDate() - firstDay + 3)
+  const diff = value.getTime() - firstThursday.getTime()
+  const week = 1 + Math.round(diff / 604800000)
+
+  return `${value.getFullYear()}-${String(week).padStart(2, '0')}`
+}
+
+function normalizeSettings(settings: AppState['settings'] | undefined, language: AppLanguage): AppSettings {
+  return {
+    language,
+    profiles: {
+      private: normalizeProfileSettings(settings?.profiles?.private, 'private', language),
+      work: normalizeProfileSettings(settings?.profiles?.work, 'work', language),
+    },
+  }
+}
+
+function createDefaultSettings(): AppSettings {
+  return {
+    language: 'nl',
+    profiles: {
+      private: createDefaultProfileSettings('private', 'nl'),
+      work: createDefaultProfileSettings('work', 'nl'),
+    },
+  }
+}
+
+function createDefaultProfileSettings(profileId: ProfileId, language: AppLanguage): ProfileSettings {
+  return {
+    taskCategories: getDefaultCategories(profileId, language),
+    enabledOptionalFeatures: [],
+  }
+}
+
+function normalizeProfileSettings(
+  settings: ProfileSettings | undefined,
+  profileId: ProfileId,
+  language: AppLanguage,
+): ProfileSettings {
+  const fallback = createDefaultProfileSettings(profileId, language)
+
+  return {
+    taskCategories: Array.isArray(settings?.taskCategories) && settings?.taskCategories.length > 0
+      ? settings.taskCategories.filter((category) => typeof category === 'string' && category.trim().length > 0)
+      : fallback.taskCategories,
+    enabledOptionalFeatures: Array.isArray(settings?.enabledOptionalFeatures)
+      ? settings.enabledOptionalFeatures.filter((feature) => feature === 'mood' || feature === 'audio')
+      : fallback.enabledOptionalFeatures,
+  }
 }
 
 function createId(prefix: string) {

@@ -1,6 +1,8 @@
 export type MoodColor = 'red' | 'orange' | 'yellow' | 'lime' | 'green'
 
-export type AppSection = 'dashboard' | 'mood' | 'tasks' | 'stats' | 'capture' | 'audio' | 'social'
+export type AppLanguage = 'nl' | 'en'
+export type OptionalFeatureId = 'mood' | 'audio'
+export type AppSection = 'dashboard' | 'mood' | 'tasks' | 'stats' | 'capture' | 'audio' | 'social' | 'add' | 'settings'
 
 export type ProfileId = 'private' | 'work'
 export type DashboardWidgetId = 'focus' | 'completed' | 'weekly' | 'greenDays' | 'important' | 'ideas' | 'audio'
@@ -11,8 +13,17 @@ export type Weekday = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday'
 
 export interface TaskIntegrations {
   calendar: boolean
-  alarm: boolean
   mail: boolean
+}
+
+export interface ProfileSettings {
+  taskCategories: string[]
+  enabledOptionalFeatures: OptionalFeatureId[]
+}
+
+export interface AppSettings {
+  language: AppLanguage
+  profiles: Record<ProfileId, ProfileSettings>
 }
 
 export interface MoodEntry {
@@ -25,13 +36,16 @@ export interface MoodEntry {
 export interface TaskItem {
   id: string
   title: string
-  cadence: 'once' | 'weekly'
+  cadence: 'once' | 'weekly' | 'daily'
   weeklyDay?: Weekday
+  weekdays?: Weekday[]
   category: string
   durationMinutes: number
   reminderHint: string
   completed: boolean
   completionDate?: string
+  completionHistory: string[]
+  tracked: boolean
   important: boolean
   integrations: TaskIntegrations
   createdAt: string
@@ -86,5 +100,6 @@ export interface MindfulnessTrack {
 export interface AppState {
   today: string
   activeProfile: ProfileId
+  settings: AppSettings
   profiles: Record<ProfileId, ProfileState>
 }

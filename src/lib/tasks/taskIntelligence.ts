@@ -1,17 +1,18 @@
-import type { QuickCaptureNode, TaskItem, TaskIntegrations, Weekday } from '../storage/types'
+import type { AppLanguage, QuickCaptureNode, TaskItem, TaskIntegrations, Weekday } from '../storage/types'
 
-export const DEFAULT_TASK_DURATION_MINUTES = 25
+export const DEFAULT_TASK_DURATION_MINUTES = 5
 
-const weekdayPattern = /elke\s+(maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag)/i
-const importantPattern = /\b(belangrijk|urgent|spoed|prioriteit|must)\b/i
+const weekdayPattern = /(?:elke|every)\s+(maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag|monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i
+const importantPattern = /\b(belangrijk|urgent|spoed|prioriteit|must|important|priority)\b/i
 const mailPattern = /\b(mail|email|e-mail)\b/i
-const tomorrowPattern = /\bmorgen\b/i
+const tomorrowPattern = /\b(morgen|tomorrow)\b/i
 
 export interface ParsedTaskDraft {
   title: string
   category: string
-  cadence: 'once' | 'weekly'
+  cadence: 'once' | 'weekly' | 'daily'
   weeklyDay?: Weekday
+  weekdays?: Weekday[]
   reminderHint: string
   important: boolean
 }
@@ -24,7 +25,7 @@ export interface TaskActions {
 
 type CalendarTaskDetails = Pick<TaskItem, 'title' | 'category' | 'reminderHint'>
 
-export function parseTaskDraft(input: string, fallbackCategory: string): ParsedTaskDraft {
+export function parseTaskDraft(input: string, fallbackCategory: string, language: AppLanguage = 'nl'): ParsedTaskDraft {
   const compactInput = input.trim().replace(/\s+/g, ' ')
   const isWeekly = weekdayPattern.test(compactInput)
   const isImportant = importantPattern.test(compactInput)
@@ -39,11 +40,12 @@ export function parseTaskDraft(input: string, fallbackCategory: string): ParsedT
     .trim()
 
   return {
-    title: normalizedTitle || compactInput || 'Nieuwe taak',
-    category: isMail ? 'Communicatie' : fallbackCategory || 'Algemeen',
+    title: normalizedTitle || compactInput || (language === 'en' ? 'New task' : 'Nieuwe taak'),
+    category: isMail ? (language === 'en' ? 'Communication' : 'Communicatie') : fallbackCategory || (language === 'en' ? 'General' : 'Algemeen'),
     cadence: isWeekly ? 'weekly' : 'once',
     weeklyDay: detectWeekday(compactInput) ?? undefined,
-    reminderHint: buildReminderHint(compactInput, isWeekly, mentionsTomorrow, isMail),
+    weekdays: isWeekly ? [detectWeekday(compactInput) ?? 'monday'] : undefined,
+    reminderHint: buildReminderHint(compactInput, isWeekly, mentionsTomorrow, isMail, language),
     important: isImportant,
   }
 }
@@ -78,40 +80,68 @@ export function taskDraftFromCapture(node: QuickCaptureNode): ParsedTaskDraft {
   return parseTaskDraft(`${node.title} ${node.content}`.trim(), 'Inbox')
 }
 
-export function isTaskCompleted(task: Pick<TaskItem, 'cadence' | 'completed' | 'completionDate'>, today: string) {
-  if (!task.completed) {
-    return false
+export function isTaskCompleted(
+  task: Pick<TaskItem, 'cadence' | 'completed' | 'completionDate' | 'completionHistory'>,
+  today: string,
+) {
+  if (task.cadence === 'once') {
+    return task.completed
   }
 
-  if (task.cadence === 'once') {
+  const history = Array.isArray(task.completionHistory) ? task.completionHistory : []
+
+  if (task.cadence === 'daily') {
+    return history.includes(today)
+  }
+
+  if (history.some((date) => getWeekKey(date) === getWeekKey(today))) {
     return true
   }
 
-  if (!task.completionDate) {
+  if (!task.completed || !task.completionDate) {
     return false
   }
 
   return getWeekKey(task.completionDate) === getWeekKey(today)
 }
 
-export function getWeekdayLabel(weekday?: Weekday) {
-  const labels: Record<Weekday, string> = {
-    monday: 'Maandag',
-    tuesday: 'Dinsdag',
-    wednesday: 'Woensdag',
-    thursday: 'Donderdag',
-    friday: 'Vrijdag',
-    saturday: 'Zaterdag',
-    sunday: 'Zondag',
+export function isTaskVisibleToday(
+  task: Pick<TaskItem, 'cadence' | 'completed' | 'completionDate' | 'completionHistory' | 'weekdays' | 'weeklyDay'>,
+  today: string,
+) {
+  if (task.cadence === 'daily') {
+    const weekday = getWeekdayFromDate(today)
+    return (task.weekdays ?? []).includes(weekday)
   }
 
-  return weekday ? labels[weekday] : 'Wekelijks'
+  return !isTaskCompleted(task, today)
+}
+
+export function wasTaskCompletedOnDate(task: Pick<TaskItem, 'completionHistory' | 'completionDate' | 'completed' | 'cadence'>, date: string) {
+  if (Array.isArray(task.completionHistory) && task.completionHistory.includes(date)) {
+    return true
+  }
+
+  return task.completed && task.completionDate === date && task.cadence === 'once'
+}
+
+export function getWeekdayLabel(weekday: Weekday | undefined, language: AppLanguage = 'nl') {
+  const labels: Record<Weekday, string> = {
+    monday: language === 'en' ? 'Monday' : 'Maandag',
+    tuesday: language === 'en' ? 'Tuesday' : 'Dinsdag',
+    wednesday: language === 'en' ? 'Wednesday' : 'Woensdag',
+    thursday: language === 'en' ? 'Thursday' : 'Donderdag',
+    friday: language === 'en' ? 'Friday' : 'Vrijdag',
+    saturday: language === 'en' ? 'Saturday' : 'Zaterdag',
+    sunday: language === 'en' ? 'Sunday' : 'Zondag',
+  }
+
+  return weekday ? labels[weekday] : language === 'en' ? 'Weekly' : 'Wekelijks'
 }
 
 export function createDefaultIntegrations(): TaskIntegrations {
   return {
     calendar: false,
-    alarm: false,
     mail: false,
   }
 }
@@ -120,12 +150,19 @@ function detectWeekday(input: string): Weekday | null {
   const normalized = input.toLowerCase()
   const map: Array<[Weekday, string]> = [
     ['monday', 'maandag'],
+    ['monday', 'monday'],
     ['tuesday', 'dinsdag'],
+    ['tuesday', 'tuesday'],
     ['wednesday', 'woensdag'],
+    ['wednesday', 'wednesday'],
     ['thursday', 'donderdag'],
+    ['thursday', 'thursday'],
     ['friday', 'vrijdag'],
+    ['friday', 'friday'],
     ['saturday', 'zaterdag'],
+    ['saturday', 'saturday'],
     ['sunday', 'zondag'],
+    ['sunday', 'sunday'],
   ]
 
   const found = map.find(([, label]) => normalized.includes(label))
@@ -145,21 +182,44 @@ function getWeekKey(date: string) {
   return `${value.getFullYear()}-${String(week).padStart(2, '0')}`
 }
 
-function buildReminderHint(input: string, isWeekly: boolean, mentionsTomorrow: boolean, isMail: boolean) {
+function buildReminderHint(input: string, isWeekly: boolean, mentionsTomorrow: boolean, isMail: boolean, language: AppLanguage) {
   if (isWeekly) {
     const day = input.match(weekdayPattern)?.[1] ?? 'je vaste dag'
-    return `Zet dit als terugkerend moment in je agenda op ${day}.`
+    return language === 'en'
+      ? `Put this on your calendar as a recurring moment on ${day}.`
+      : `Zet dit als terugkerend moment in je agenda op ${day}.`
   }
 
   if (mentionsTomorrow) {
-    return 'Maak hiervoor een reminder voor morgen in je agenda of wekker.'
+    return language === 'en'
+      ? 'Create a reminder for tomorrow in your calendar or mail flow.'
+      : 'Maak hiervoor een reminder voor morgen in je agenda of mailflow.'
   }
 
   if (isMail) {
-    return 'Handig om dit direct als maildraft of follow-up in te plannen.'
+    return language === 'en'
+      ? 'Useful to turn this into a draft email or follow-up right away.'
+      : 'Handig om dit direct als maildraft of follow-up in te plannen.'
   }
 
-  return 'Voeg dit desgewenst toe aan je agenda, mail of wekker.'
+  return language === 'en'
+    ? 'Optionally add this to your calendar or draft mail.'
+    : 'Voeg dit desgewenst toe aan je agenda of mail.'
+}
+
+function getWeekdayFromDate(date: string): Weekday {
+  const day = new Date(`${date}T12:00:00`).getDay()
+  const map: Record<number, Weekday> = {
+    0: 'sunday',
+    1: 'monday',
+    2: 'tuesday',
+    3: 'wednesday',
+    4: 'thursday',
+    5: 'friday',
+    6: 'saturday',
+  }
+
+  return map[day]
 }
 
 function prefersIPhoneCalendar() {

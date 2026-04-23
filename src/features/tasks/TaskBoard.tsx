@@ -1,26 +1,31 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   DEFAULT_TASK_DURATION_MINUTES,
   buildTaskActions,
   createDefaultIntegrations,
   getWeekdayLabel,
   isTaskCompleted,
+  isTaskVisibleToday,
   openTaskCalendar,
   parseTaskDraft,
+  wasTaskCompletedOnDate,
 } from '../../lib/tasks/taskIntelligence'
-import type { FocusTimerState, TaskItem, Weekday } from '../../lib/storage/types'
+import { getWeekdayOptions } from '../../lib/i18n'
+import type { AppLanguage, FocusTimerState, TaskItem, Weekday } from '../../lib/storage/types'
 
 interface TaskBoardProps {
   tasks: TaskItem[]
   today: string
   onToggleTask: (taskId: string) => void
   onDeleteTask: (taskId: string) => void
-  onAddTask: (task: Omit<TaskItem, 'id' | 'completed' | 'createdAt' | 'completionDate'>) => void
+  onAddTask: (task: Omit<TaskItem, 'id' | 'completed' | 'createdAt' | 'completionDate' | 'completionHistory'>) => void
   activeTimer?: FocusTimerState
   onStartTimer: (taskId: string, durationMinutes: number) => void
   onPauseTimer: () => void
   onResumeTimer: () => void
   profileLabel: string
+  language: AppLanguage
+  categories: string[]
 }
 
 export function TaskBoard({
@@ -34,27 +39,39 @@ export function TaskBoard({
   onPauseTimer,
   onResumeTimer,
   profileLabel,
+  language,
+  categories,
 }: TaskBoardProps) {
+  const defaultCategory = categories[0] ?? (language === 'en' ? 'General' : 'Algemeen')
+  const weekdayOptions = getWeekdayOptions(language)
   const [isCreatingTask, setIsCreatingTask] = useState(false)
   const [title, setTitle] = useState('')
-  const [category, setCategory] = useState('Structuur')
-  const [cadence, setCadence] = useState<'once' | 'weekly'>('once')
+  const [category, setCategory] = useState(defaultCategory)
+  const [cadence, setCadence] = useState<'once' | 'weekly' | 'daily'>('once')
   const [weeklyDay, setWeeklyDay] = useState<Weekday>('monday')
+  const [weekdays, setWeekdays] = useState<Weekday[]>(['monday'])
   const [durationMinutes, setDurationMinutes] = useState(DEFAULT_TASK_DURATION_MINUTES)
   const [reminderHint, setReminderHint] = useState('')
   const [important, setImportant] = useState(false)
+  const [tracked, setTracked] = useState(false)
   const [integrations, setIntegrations] = useState(createDefaultIntegrations())
   const [voiceSupported] = useState(() => {
     return typeof window !== 'undefined' && !!(window.SpeechRecognition || window.webkitSpeechRecognition)
   })
   const [voiceStatus, setVoiceStatus] = useState<string | null>(null)
 
+  useEffect(() => {
+    if (!categories.includes(category)) {
+      setCategory(defaultCategory)
+    }
+  }, [categories, category, defaultCategory])
+
   const openTasks = useMemo(
-    () => tasks.filter((task) => !isTaskCompleted(task, today)).sort(sortTasks),
+    () => tasks.filter((task) => isTaskVisibleToday(task, today) && !isTaskCompleted(task, today)).sort(sortTasks),
     [tasks, today],
   )
-  const completedTasks = useMemo(
-    () => tasks.filter((task) => isTaskCompleted(task, today)).sort(sortTasks),
+  const completedTasksToday = useMemo(
+    () => tasks.filter((task) => wasTaskCompletedOnDate(task, today)).sort(sortTasks),
     [tasks, today],
   )
 
@@ -62,32 +79,33 @@ export function TaskBoard({
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition
 
     if (!Recognition) {
-      setVoiceStatus('Spraakherkenning wordt in deze browser niet ondersteund.')
+      setVoiceStatus(language === 'en' ? 'Speech recognition is not supported in this browser.' : 'Spraakherkenning wordt in deze browser niet ondersteund.')
       return
     }
 
     const recognition = new Recognition()
-    recognition.lang = 'nl-NL'
+    recognition.lang = language === 'en' ? 'en-US' : 'nl-NL'
     recognition.interimResults = false
     recognition.maxAlternatives = 1
-    setVoiceStatus('Luistert... spreek je taak hardop uit.')
+    setVoiceStatus(language === 'en' ? 'Listening... say your task out loud.' : 'Luistert... spreek je taak hardop uit.')
 
     recognition.onresult = (event) => {
       const transcript = event.results[0]?.[0]?.transcript?.trim() ?? ''
       if (transcript) {
-        const parsed = parseTaskDraft(transcript, category)
+        const parsed = parseTaskDraft(transcript, category, language)
         setTitle(parsed.title)
         setCategory(parsed.category)
         setCadence(parsed.cadence)
         setWeeklyDay(parsed.weeklyDay ?? 'monday')
+        setWeekdays(parsed.weekdays ?? ['monday'])
         setReminderHint(parsed.reminderHint)
         setImportant(parsed.important)
-        setVoiceStatus('Transcript slim omgezet naar taakvoorstel.')
+        setVoiceStatus(language === 'en' ? 'Transcript turned into a task suggestion.' : 'Transcript slim omgezet naar taakvoorstel.')
       }
     }
 
     recognition.onerror = () => {
-      setVoiceStatus('Spraakherkenning mislukte. Probeer het opnieuw of typ handmatig.')
+      setVoiceStatus(language === 'en' ? 'Speech recognition failed. Try again or type manually.' : 'Spraakherkenning mislukte. Probeer het opnieuw of typ handmatig.')
     }
 
     recognition.start()
@@ -95,12 +113,14 @@ export function TaskBoard({
 
   const resetForm = () => {
     setTitle('')
-    setCategory('Structuur')
+    setCategory(defaultCategory)
     setCadence('once')
     setWeeklyDay('monday')
+    setWeekdays(['monday'])
     setDurationMinutes(DEFAULT_TASK_DURATION_MINUTES)
     setReminderHint('')
     setImportant(false)
+    setTracked(false)
     setIntegrations(createDefaultIntegrations())
   }
 
@@ -109,37 +129,38 @@ export function TaskBoard({
       return
     }
 
-    const parsed = parseTaskDraft(title, category.trim() || 'Algemeen')
+    const parsed = parseTaskDraft(title, category.trim() || defaultCategory, language)
+    const nextCategory = category.trim() || parsed.category
+    const nextReminder = reminderHint.trim() || parsed.reminderHint
 
     onAddTask({
       title: parsed.title,
-      category: parsed.category,
-      cadence: cadence === 'weekly' ? 'weekly' : parsed.cadence,
-      weeklyDay: (cadence === 'weekly' ? weeklyDay : parsed.weeklyDay) ?? undefined,
+      category: nextCategory,
+      cadence,
+      weeklyDay: cadence === 'weekly' ? weeklyDay : undefined,
+      weekdays: cadence === 'daily' ? weekdays : undefined,
       durationMinutes: Math.max(1, durationMinutes),
-      reminderHint: reminderHint.trim() || parsed.reminderHint,
+      reminderHint: nextReminder,
       important: important || parsed.important,
+      tracked,
       integrations,
     })
 
     const actions = buildTaskActions({
       title: parsed.title,
-      category: parsed.category,
-      reminderHint: reminderHint.trim() || parsed.reminderHint,
+      category: nextCategory,
+      reminderHint: nextReminder,
     })
 
     if (integrations.calendar) {
       openTaskCalendar({
         title: parsed.title,
-        category: parsed.category,
-        reminderHint: reminderHint.trim() || parsed.reminderHint,
+        category: nextCategory,
+        reminderHint: nextReminder,
       })
     }
     if (integrations.mail) {
       window.location.href = actions.mailUrl
-    }
-    if (integrations.alarm) {
-      void navigator.clipboard.writeText(actions.alarmText)
     }
 
     resetForm()
@@ -151,38 +172,48 @@ export function TaskBoard({
     <section className="panel card-stack">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Taken</p>
-          <h2>{profileLabel === 'Werk' ? 'Werk helder en uitvoerbaar houden' : 'Vandaag klein en haalbaar houden'}</h2>
+          <p className="eyebrow">{language === 'en' ? 'Tasks' : 'Taken'}</p>
+          <h2>{language === 'en' ? `${profileLabel} tasks for today` : `${profileLabel} taken voor vandaag`}</h2>
         </div>
-        <button type="button" className="secondary-button" onClick={() => setIsCreatingTask((current) => !current)}>
-          {isCreatingTask ? 'Sluit taken toevoegen' : 'Taken toevoegen'}
+        <button
+          type="button"
+          className="secondary-button icon-button"
+          onClick={() => setIsCreatingTask((current) => !current)}
+          aria-label={language === 'en' ? 'Add task' : 'Taak toevoegen'}
+        >
+          +
         </button>
       </div>
 
       {isCreatingTask && <div className="task-form">
         <label className="field">
-          <span>Nieuwe taak</span>
+          <span>{language === 'en' ? 'New task' : 'Nieuwe taak'}</span>
           <input
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            placeholder="Bijvoorbeeld: morgen afspraak bevestigen"
+            placeholder={language === 'en' ? 'For example: confirm appointment tomorrow' : 'Bijvoorbeeld: morgen afspraak bevestigen'}
           />
         </label>
 
-        <div className="inline-fields">
+        <div className="inline-fields task-inline-grid">
           <label className="field">
-            <span>Categorie</span>
-            <input value={category} onChange={(event) => setCategory(event.target.value)} placeholder="Werk, thuis, zelfzorg" />
-          </label>
-          <label className="field">
-            <span>Herhaling</span>
-            <select value={cadence} onChange={(event) => setCadence(event.target.value as 'once' | 'weekly')}>
-              <option value="once">Eenmalig</option>
-              <option value="weekly">Wekelijks</option>
+            <span>{language === 'en' ? 'Category' : 'Categorie'}</span>
+            <select value={category} onChange={(event) => setCategory(event.target.value)}>
+              {categories.map((item) => (
+                <option key={item} value={item}>{item}</option>
+              ))}
             </select>
           </label>
           <label className="field">
-            <span>Duur in minuten</span>
+            <span>{language === 'en' ? 'Repeat' : 'Herhaling'}</span>
+            <select value={cadence} onChange={(event) => setCadence(event.target.value as 'once' | 'weekly' | 'daily')}>
+              <option value="once">{language === 'en' ? 'One-off' : 'Eenmalig'}</option>
+              <option value="weekly">{language === 'en' ? 'Weekly' : 'Wekelijks'}</option>
+              <option value="daily">{language === 'en' ? 'Daily' : 'Dagelijks'}</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>{language === 'en' ? 'Duration in minutes' : 'Duur in minuten'}</span>
             <input
               type="number"
               min={1}
@@ -195,55 +226,82 @@ export function TaskBoard({
 
         {cadence === 'weekly' && (
           <label className="field">
-            <span>Op welke dag?</span>
+            <span>{language === 'en' ? 'Which day?' : 'Op welke dag?'}</span>
             <select value={weeklyDay} onChange={(event) => setWeeklyDay(event.target.value as Weekday)}>
-              <option value="monday">Maandag</option>
-              <option value="tuesday">Dinsdag</option>
-              <option value="wednesday">Woensdag</option>
-              <option value="thursday">Donderdag</option>
-              <option value="friday">Vrijdag</option>
-              <option value="saturday">Zaterdag</option>
-              <option value="sunday">Zondag</option>
+              {weekdayOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
             </select>
           </label>
         )}
 
+        {cadence === 'daily' && (
+          <div className="field">
+            <span>{language === 'en' ? 'Show on these days' : 'Toon op deze dagen'}</span>
+            <div className="weekday-picker">
+              {weekdayOptions.map((option) => {
+                const selected = weekdays.includes(option.value)
+
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={selected ? 'weekday-chip active' : 'weekday-chip'}
+                    onClick={() => setWeekdays((current) => {
+                      if (selected) {
+                        return current.length === 1 ? current : current.filter((item) => item !== option.value)
+                      }
+
+                      return [...current, option.value]
+                    })}
+                  >
+                    {option.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
         <label className="field">
-          <span>Reminder hint</span>
+          <span>{language === 'en' ? 'Reminder hint' : 'Reminder hint'}</span>
           <input
             value={reminderHint}
             onChange={(event) => setReminderHint(event.target.value)}
-            placeholder="Bijvoorbeeld: zet in agenda op woensdag 08:30"
+            placeholder={language === 'en' ? 'For example: add to calendar on Wednesday 08:30' : 'Bijvoorbeeld: zet in agenda op woensdag 08:30'}
           />
         </label>
 
         <label className="toggle-row">
           <input checked={important} onChange={(event) => setImportant(event.target.checked)} type="checkbox" />
-          <span>Belangrijke taak rood markeren</span>
+          <span>{language === 'en' ? 'Mark as important' : 'Belangrijke taak markeren'}</span>
+        </label>
+
+        <label className="toggle-row">
+          <input checked={tracked} onChange={(event) => setTracked(event.target.checked)} type="checkbox" />
+          <span>{language === 'en' ? 'Track this task in statistics' : 'Track deze taak in statistieken'}</span>
         </label>
 
         <div className="integration-block">
-          <span className="field-label">Direct koppelen bij opslaan</span>
+          <span className="field-label">{language === 'en' ? 'After saving' : 'Na opslaan'}</span>
           <label className="toggle-row">
             <input checked={integrations.calendar} onChange={(event) => setIntegrations((current) => ({ ...current, calendar: event.target.checked }))} type="checkbox" />
-            <span>Agenda openen</span>
-          </label>
-          <label className="toggle-row">
-            <input checked={integrations.alarm} onChange={(event) => setIntegrations((current) => ({ ...current, alarm: event.target.checked }))} type="checkbox" />
-            <span>Wekkertekst kopieren</span>
+            <span>{language === 'en' ? 'Put in calendar' : 'Zet in agenda'}</span>
           </label>
           <label className="toggle-row">
             <input checked={integrations.mail} onChange={(event) => setIntegrations((current) => ({ ...current, mail: event.target.checked }))} type="checkbox" />
-            <span>Mail opstellen</span>
+            <span>{language === 'en' ? 'Draft email' : 'Stel mail op'}</span>
           </label>
         </div>
 
         <div className="action-row">
           <button className="primary-button" type="button" onClick={submitTask}>
-            Voeg taak toe
+            {language === 'en' ? 'Save task' : 'Bewaar taak'}
           </button>
           <button className="secondary-button" type="button" onClick={startVoiceCapture} disabled={!voiceSupported}>
-            {voiceSupported ? 'Spraak naar taak' : 'Spraak niet beschikbaar'}
+            {voiceSupported
+              ? language === 'en' ? 'Speech to task' : 'Spraak naar taak'
+              : language === 'en' ? 'Speech unavailable' : 'Spraak niet beschikbaar'}
           </button>
         </div>
 
@@ -252,7 +310,7 @@ export function TaskBoard({
 
       <div className="task-section">
         <div className="section-heading compact">
-          <h3>Open taken</h3>
+          <h3>{language === 'en' ? 'Open tasks' : 'Open taken'}</h3>
           <span>{openTasks.length}</span>
         </div>
         <div className="task-list">
@@ -260,6 +318,8 @@ export function TaskBoard({
             <TaskCard
               key={task.id}
               task={task}
+              language={language}
+              isCompletedToday={false}
               onToggleTask={onToggleTask}
               onDeleteTask={onDeleteTask}
               activeTimer={activeTimer}
@@ -269,20 +329,27 @@ export function TaskBoard({
               showFocusControls
             />
           ))}
-          {openTasks.length === 0 && <p className="empty-copy">Geen open taken. Mooi moment voor een nieuwe kleine stap.</p>}
+          {openTasks.length === 0 && <p className="empty-copy">{language === 'en' ? 'No open tasks. Good moment for your next small step.' : 'Geen open taken. Mooi moment voor een nieuwe kleine stap.'}</p>}
         </div>
       </div>
 
       <div className="task-section completed-section">
         <div className="section-heading compact">
-          <h3>Afgeronde taken</h3>
-          <span>{completedTasks.length}</span>
+          <h3>{language === 'en' ? 'Completed today' : 'Vandaag afgerond'}</h3>
+          <span>{completedTasksToday.length}</span>
         </div>
         <div className="task-list">
-          {completedTasks.map((task) => (
-            <TaskCard key={task.id} task={task} onToggleTask={onToggleTask} onDeleteTask={onDeleteTask} />
+          {completedTasksToday.map((task) => (
+            <TaskCard
+              key={task.id}
+              task={task}
+              language={language}
+              isCompletedToday
+              onToggleTask={onToggleTask}
+              onDeleteTask={onDeleteTask}
+            />
           ))}
-          {completedTasks.length === 0 && <p className="empty-copy">Afgeronde taken verschijnen hier onderaan.</p>}
+          {completedTasksToday.length === 0 && <p className="empty-copy">{language === 'en' ? 'Tasks completed today show up here.' : 'Taken die je vandaag afrondt verschijnen hier.'}</p>}
         </div>
       </div>
     </section>
@@ -291,6 +358,8 @@ export function TaskBoard({
 
 interface TaskCardProps {
   task: TaskItem
+  language: AppLanguage
+  isCompletedToday: boolean
   onToggleTask: (taskId: string) => void
   onDeleteTask: (taskId: string) => void
   activeTimer?: FocusTimerState
@@ -302,6 +371,8 @@ interface TaskCardProps {
 
 function TaskCard({
   task,
+  language,
+  isCompletedToday,
   onToggleTask,
   onDeleteTask,
   activeTimer,
@@ -314,14 +385,14 @@ function TaskCard({
   const isTimerOnTask = activeTimer?.taskId === task.id && activeTimer.status !== 'finished'
   const focusStatusLabel = isTimerOnTask
     ? activeTimer?.status === 'paused'
-      ? 'Focus gepauzeerd'
-      : 'Focus actief'
+      ? language === 'en' ? 'Focus paused' : 'Focus gepauzeerd'
+      : language === 'en' ? 'Focus active' : 'Focus actief'
     : null
   const timerButtonLabel = isTimerOnTask
     ? activeTimer?.status === 'running'
-      ? 'Pauzeer focus'
-      : 'Hervat focus'
-    : 'Start focus'
+      ? language === 'en' ? 'Pause focus' : 'Pauzeer focus'
+      : language === 'en' ? 'Resume focus' : 'Hervat focus'
+    : language === 'en' ? 'Start focus' : 'Start focus'
 
   const handleTimerAction = () => {
     if (!showFocusControls) {
@@ -342,45 +413,48 @@ function TaskCard({
   }
 
   return (
-    <article key={task.id} className={task.completed ? 'task-card completed' : isTimerOnTask ? 'task-card active-focus' : task.important ? 'task-card important' : 'task-card'}>
+    <article className={isCompletedToday ? 'task-card completed' : isTimerOnTask ? 'task-card active-focus' : task.important ? 'task-card important' : 'task-card'}>
       <button
         type="button"
-        className={task.completed ? 'check-button checked' : 'check-button'}
+        className={isCompletedToday ? 'check-button checked' : 'check-button'}
         onClick={() => onToggleTask(task.id)}
-        aria-label={task.completed ? `Markeer ${task.title} als open` : `Markeer ${task.title} als afgerond`}
+        aria-label={isCompletedToday
+          ? language === 'en' ? `Mark ${task.title} as open` : `Markeer ${task.title} als open`
+          : language === 'en' ? `Mark ${task.title} as completed` : `Markeer ${task.title} als afgerond`}
       >
-        {task.completed ? '✓' : ''}
+        {isCompletedToday ? '✓' : ''}
       </button>
       <div className="task-copy">
         <div className="task-meta">
-          <span className="pill">{task.cadence === 'weekly' ? 'Wekelijks' : 'Eenmalig'}</span>
-          {task.cadence === 'weekly' && task.weeklyDay && <span className="pill muted">{getWeekdayLabel(task.weeklyDay)}</span>}
+          <span className="pill">{task.cadence === 'daily' ? (language === 'en' ? 'Daily' : 'Dagelijks') : task.cadence === 'weekly' ? (language === 'en' ? 'Weekly' : 'Wekelijks') : language === 'en' ? 'One-off' : 'Eenmalig'}</span>
+          {task.cadence === 'weekly' && task.weeklyDay && <span className="pill muted">{getWeekdayLabel(task.weeklyDay, language)}</span>}
+          {task.cadence === 'daily' && task.weekdays?.map((weekday) => (
+            <span key={weekday} className="pill muted">{getWeekdayLabel(weekday, language)}</span>
+          ))}
           <span className="pill muted">{task.durationMinutes} min</span>
           <span className="pill muted">{task.category}</span>
-          {task.important && <span className="pill danger">Belangrijk</span>}
+          {task.important && <span className="pill danger">{language === 'en' ? 'Important' : 'Belangrijk'}</span>}
+          {task.tracked && <span className="pill success">{language === 'en' ? 'Tracked' : 'Getrackt'}</span>}
           {focusStatusLabel && <span className="pill success">{focusStatusLabel}</span>}
         </div>
         <h3>{task.title}</h3>
-        <p>{task.reminderHint}</p>
+        {task.reminderHint && <p>{task.reminderHint}</p>}
         <div className="task-links">
-          {showFocusControls && (
+          {showFocusControls && !isCompletedToday && (
             <button type="button" className="mini-button mini-button-strong" onClick={handleTimerAction}>
               {timerButtonLabel}
             </button>
           )}
           <button type="button" className="mini-button" onClick={() => openTaskCalendar(task)}>
-            Agenda
+            {language === 'en' ? 'Calendar' : 'Agenda'}
           </button>
           <button type="button" className="mini-button" onClick={() => { window.location.href = actions.mailUrl }}>
             Mail
           </button>
-          <button type="button" className="mini-button" onClick={() => void navigator.clipboard.writeText(actions.alarmText)}>
-            Wekkertekst
-          </button>
         </div>
       </div>
       <button type="button" className="ghost-button" onClick={() => onDeleteTask(task.id)}>
-        Verwijder
+        {language === 'en' ? 'Delete' : 'Verwijder'}
       </button>
     </article>
   )

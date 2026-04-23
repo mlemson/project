@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import type { FocusTimerState, TaskItem } from '../../lib/storage/types'
+import type { AppLanguage, FocusTimerState, TaskItem } from '../../lib/storage/types'
 
 interface FocusTimerPanelProps {
+  language: AppLanguage
   timer: FocusTimerState
   task: TaskItem
   onPause: () => void
@@ -12,7 +13,7 @@ interface FocusTimerPanelProps {
   onClose: () => void
 }
 
-export function FocusTimerPanel({ timer, task, onPause, onResume, onComplete, onAdjust, onMinimize, onClose }: FocusTimerPanelProps) {
+export function FocusTimerPanel({ language, timer, task, onPause, onResume, onComplete, onAdjust, onMinimize, onClose }: FocusTimerPanelProps) {
   const [customMinutes, setCustomMinutes] = useState(5)
   const [remainingSeconds, setRemainingSeconds] = useState(() => getRemainingSeconds(timer))
   const announcedCompletionRef = useRef<string | undefined>(undefined)
@@ -56,28 +57,30 @@ export function FocusTimerPanel({ timer, task, onPause, onResume, onComplete, on
         className={timer.status === 'finished' ? 'focus-timer-panel finished' : 'focus-timer-panel'}
         role="dialog"
         aria-modal="true"
-        aria-label="Focus timer"
+        aria-label={language === 'en' ? 'Focus timer' : 'Focus timer'}
       >
         <div className="focus-timer-header">
           <div>
-            <span className="eyebrow">Focus timer</span>
+            <span className="eyebrow">{language === 'en' ? 'Focus timer' : 'Focus timer'}</span>
             <h3>{task.title}</h3>
           </div>
           <div className="timer-header-actions">
             {timer.status !== 'finished' && (
               <button type="button" className="ghost-button" onClick={onMinimize}>
-                In hoek
+                {language === 'en' ? 'Minimize' : 'In hoek'}
               </button>
             )}
             <button type="button" className="ghost-button" onClick={onClose}>
-              {timer.status === 'finished' ? 'Sluiten' : 'Afsluiten'}
+              {timer.status === 'finished'
+                ? language === 'en' ? 'Close' : 'Sluiten'
+                : language === 'en' ? 'Close and reset' : 'Sluit en reset'}
             </button>
           </div>
         </div>
 
         <div className="focus-timer-clock-row">
           <strong className="focus-timer-clock">{timerLabel}</strong>
-          <span className="pill muted">{task.durationMinutes} min gepland</span>
+          <span className="pill muted">{task.durationMinutes} {language === 'en' ? 'min planned' : 'min gepland'}</span>
         </div>
 
         <div className="focus-progress-track" aria-hidden="true">
@@ -86,16 +89,22 @@ export function FocusTimerPanel({ timer, task, onPause, onResume, onComplete, on
 
         <p className="helper-copy">
           {timer.status === 'finished'
-            ? 'Tijd is om. De taak is automatisch als afgerond gemarkeerd.'
-            : 'Deze focuslaag blokkeert de rest van het scherm totdat je pauzeert of later verder gaat.'}
+            ? language === 'en'
+              ? 'Time is up. The task has been marked as completed.'
+              : 'Tijd is om. De taak is automatisch als afgerond gemarkeerd.'
+            : language === 'en'
+              ? 'This focus layer blocks the rest of the screen until you pause it, reset it or finish it.'
+              : 'Deze focuslaag blokkeert de rest van het scherm totdat je pauzeert, reset of afrondt.'}
         </p>
 
         {timer.status === 'finished' && (
           <div ref={completionCardRef} className="focus-complete-card" tabIndex={-1}>
-            <span className="focus-complete-badge">Afgerond</span>
-            <h4>Mooi. Deze focusronde zit erop.</h4>
+            <span className="focus-complete-badge">{language === 'en' ? 'Done' : 'Afgerond'}</span>
+            <h4>{language === 'en' ? 'This focus round is done.' : 'Deze focusronde zit erop.'}</h4>
             <p>
-              {task.title} is afgerond en opgeslagen. Neem een korte ademruimte of kies direct je volgende kleine stap.
+              {language === 'en'
+                ? `${task.title} is saved. Take a short breath or move to the next small step.`
+                : `${task.title} is opgeslagen. Neem een korte ademruimte of kies je volgende kleine stap.`}
             </p>
           </div>
         )}
@@ -103,10 +112,12 @@ export function FocusTimerPanel({ timer, task, onPause, onResume, onComplete, on
         {timer.status !== 'finished' && (
           <div className="timer-action-row">
             <button type="button" className="primary-button" onClick={timer.status === 'running' ? onPause : onResume}>
-              {timer.status === 'running' ? 'Pauzeer focus' : 'Hervat focus'}
+              {timer.status === 'running'
+                ? language === 'en' ? 'Pause focus' : 'Pauzeer focus'
+                : language === 'en' ? 'Resume focus' : 'Hervat focus'}
             </button>
             <button type="button" className="secondary-button secondary-button-strong" onClick={onComplete}>
-              Klaar
+              {language === 'en' ? 'Done' : 'Klaar'}
             </button>
             <button type="button" className="secondary-button" onClick={() => onAdjust(5)}>
               +5 min
@@ -120,7 +131,7 @@ export function FocusTimerPanel({ timer, task, onPause, onResume, onComplete, on
         {timer.status !== 'finished' && (
           <div className="timer-adjust-row">
             <label className="field">
-              <span>Tijd aanpassen</span>
+              <span>{language === 'en' ? 'Adjust time' : 'Tijd aanpassen'}</span>
               <input
                 type="number"
                 min={1}
@@ -130,7 +141,7 @@ export function FocusTimerPanel({ timer, task, onPause, onResume, onComplete, on
               />
             </label>
             <button type="button" className="secondary-button" onClick={() => onAdjust(customMinutes)}>
-              Tijd toevoegen
+              {language === 'en' ? 'Add time' : 'Tijd toevoegen'}
             </button>
           </div>
         )}
@@ -195,12 +206,13 @@ function playTone(
 }
 
 interface FocusTimerDockProps {
+  language: AppLanguage
   timer: FocusTimerState
   task: TaskItem
   onRestore: () => void
 }
 
-export function FocusTimerDock({ timer, task, onRestore }: FocusTimerDockProps) {
+export function FocusTimerDock({ language, timer, task, onRestore }: FocusTimerDockProps) {
   const [remainingSeconds, setRemainingSeconds] = useState(() => getRemainingSeconds(timer))
 
   useEffect(() => {
@@ -219,7 +231,7 @@ export function FocusTimerDock({ timer, task, onRestore }: FocusTimerDockProps) 
 
   return (
     <button type="button" className="focus-timer-dock" onClick={onRestore}>
-      <span className="eyebrow">Focus actief</span>
+      <span className="eyebrow">{language === 'en' ? 'Focus active' : 'Focus actief'}</span>
       <strong>{formatSeconds(remainingSeconds)}</strong>
       <span>{task.title}</span>
     </button>

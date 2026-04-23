@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { FeatureLibraryScreen } from '../features/add/FeatureLibraryScreen'
 import { AudioLibrary } from '../features/audio/AudioLibrary'
 import { QuickCaptureBoard } from '../features/capture/QuickCaptureBoard'
 import { DashboardScreen } from '../features/dashboard/DashboardScreen'
 import { MoodCheckCard } from '../features/mood/MoodCheckCard'
+import { SettingsScreen } from '../features/settings/SettingsScreen'
 import { SocialScreen } from '../features/social/SocialScreen'
 import { StatsScreen } from '../features/stats/StatsScreen'
 import { FocusTimerDock, FocusTimerPanel } from '../features/tasks/FocusTimerPanel'
@@ -12,21 +14,24 @@ import {
   addTask,
   adjustTaskTimer,
   completeTaskTimer,
+  deleteCaptureNode,
   deleteTask,
   dismissTaskTimer,
-  deleteCaptureNode,
   getActiveProfile,
-  replaceAppState,
   loadAppState,
   pauseTaskTimer,
-  saveMoodEntry,
+  replaceAppState,
   resumeTaskTimer,
+  saveMoodEntry,
   startTaskTimer,
   switchProfile,
-  updateDashboardPanelOrder,
   toggleCaptureLink,
+  toggleOptionalFeature,
   toggleTaskCompletion,
   updateCaptureNode,
+  updateDashboardPanelOrder,
+  updateLanguage,
+  updateTaskCategories,
 } from '../lib/storage/appStorage'
 import {
   deleteMindfulnessTrack,
@@ -34,24 +39,12 @@ import {
   renameMindfulnessTrack,
   saveMindfulnessTrack,
 } from '../lib/storage/audioStorage'
+import { getProfileLabel, getSectionLabel } from '../lib/i18n'
 import { downloadAppState, importAppStateFile } from '../lib/transfer/appTransfer'
-import { isTaskCompleted } from '../lib/tasks/taskIntelligence'
-import type { AppSection, AppState, DashboardPanelId, MindfulnessTrack, ProfileId, TaskItem } from '../lib/storage/types'
+import { isTaskCompleted, isTaskVisibleToday } from '../lib/tasks/taskIntelligence'
+import type { AppSection, AppState, DashboardPanelId, MindfulnessTrack, OptionalFeatureId, ProfileId, TaskItem } from '../lib/storage/types'
 
-const allSections: Array<{ id: AppSection; label: string }> = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'mood', label: 'Check-in' },
-  { id: 'tasks', label: 'Taken' },
-  { id: 'stats', label: 'Statistieken' },
-  { id: 'capture', label: 'Ideeen' },
-  { id: 'audio', label: 'Mindfulness' },
-  { id: 'social', label: 'Sociaal' },
-]
-
-const profiles: Array<{ id: ProfileId; label: string }> = [
-  { id: 'private', label: 'Prive' },
-  { id: 'work', label: 'Werk' },
-]
+const optionalFeatureOrder: OptionalFeatureId[] = ['mood', 'audio']
 
 export function App() {
   const [activeSection, setActiveSection] = useState<AppSection>('dashboard')
@@ -64,13 +57,24 @@ export function App() {
   const [isFocusDockVisible, setIsFocusDockVisible] = useState(false)
 
   const profileState = useMemo(() => getActiveProfile(state), [state])
+  const language = state.settings.language
   const isPrivateProfile = state.activeProfile === 'private'
+  const profileLabel = getProfileLabel(state.activeProfile, language)
+  const profileSettings = state.settings.profiles[state.activeProfile]
+  const enabledOptionalFeatures = profileSettings.enabledOptionalFeatures
   const activeTimer = profileState.activeTimer
   const activeTimerTask = activeTimer ? profileState.tasks.find((task) => task.id === activeTimer.taskId) : undefined
-  const sections = useMemo(
-    () => allSections.filter((section) => (isPrivateProfile ? true : section.id !== 'mood' && section.id !== 'audio')),
-    [isPrivateProfile],
-  )
+
+  const sections = useMemo(() => {
+    const enabledPrivateSections = isPrivateProfile
+      ? optionalFeatureOrder.filter((featureId) => enabledOptionalFeatures.includes(featureId))
+      : []
+
+    return (['dashboard', 'tasks', 'stats', 'capture', ...enabledPrivateSections, 'social', 'add', 'settings'] as AppSection[]).map((id) => ({
+      id,
+      label: getSectionLabel(id, language),
+    }))
+  }, [enabledOptionalFeatures, isPrivateProfile, language])
 
   const todayMood = useMemo(
     () => profileState.moodEntries.find((entry) => entry.date === state.today),
@@ -78,13 +82,15 @@ export function App() {
   )
 
   const completedToday = profileState.tasks.filter((task) => isTaskCompleted(task, state.today)).length
-  const importantOpenTasks = profileState.tasks.filter((task) => task.important && !isTaskCompleted(task, state.today)).length
+  const importantOpenTasks = profileState.tasks.filter(
+    (task) => task.important && isTaskVisibleToday(task, state.today) && !isTaskCompleted(task, state.today),
+  ).length
 
   useEffect(() => {
-    if (!isPrivateProfile && activeSection === 'mood') {
+    if (!sections.some((section) => section.id === activeSection)) {
       setActiveSection('dashboard')
     }
-  }, [activeSection, isPrivateProfile])
+  }, [activeSection, sections])
 
   useEffect(() => {
     let isActive = true
@@ -97,7 +103,9 @@ export function App() {
       })
       .catch(() => {
         if (isActive) {
-          setAudioError('Mindfulness-audio kon niet geladen worden in deze browser.')
+          setAudioError(language === 'en'
+            ? 'Mindfulness audio could not be loaded in this browser.'
+            : 'Mindfulness-audio kon niet geladen worden in deze browser.')
         }
       })
 
@@ -105,7 +113,7 @@ export function App() {
       isActive = false
       tracks.forEach((track) => URL.revokeObjectURL(track.url))
     }
-  }, [])
+  }, [language])
 
   useEffect(() => {
     if (!activeTimer || activeTimer.status !== 'running' || !activeTimer.endsAt) {
@@ -154,7 +162,9 @@ export function App() {
       setAudioError(null)
       await refreshTracks()
     } catch {
-      setAudioError('Opslaan van audio lukte niet. Probeer een mp3 of ander audiobestand.')
+      setAudioError(language === 'en'
+        ? 'Saving audio failed. Try an mp3 or another audio file.'
+        : 'Opslaan van audio lukte niet. Probeer een mp3 of ander audiobestand.')
     }
   }
 
@@ -163,7 +173,7 @@ export function App() {
     await refreshTracks()
   }
 
-  const handleTaskAdd = (task: Omit<TaskItem, 'id' | 'completed' | 'createdAt' | 'completionDate'>) => {
+  const handleTaskAdd = (task: Omit<TaskItem, 'id' | 'completed' | 'createdAt' | 'completionDate' | 'completionHistory'>) => {
     setState((current) => addTask(current, task))
     setActiveSection('tasks')
   }
@@ -175,7 +185,7 @@ export function App() {
 
   const handleExport = () => {
     downloadAppState(state)
-    setTransferMessage('Exportbestand gedownload.')
+    setTransferMessage(language === 'en' ? 'Export file downloaded.' : 'Exportbestand gedownload.')
   }
 
   const handleImport = async (files: FileList | null) => {
@@ -186,9 +196,13 @@ export function App() {
     try {
       const nextState = await importAppStateFile(files[0])
       setState(replaceAppState(nextState))
-      setTransferMessage('Import gelukt.')
+      setTransferMessage(language === 'en' ? 'Import succeeded.' : 'Import gelukt.')
     } catch {
-      setTransferMessage('Import mislukt. Controleer of je een geldig exportbestand hebt gekozen.')
+      setTransferMessage(
+        language === 'en'
+          ? 'Import failed. Check whether you selected a valid export file.'
+          : 'Import mislukt. Controleer of je een geldig exportbestand hebt gekozen.',
+      )
     }
   }
 
@@ -221,17 +235,7 @@ export function App() {
   }
 
   const handleCloseFocus = () => {
-    if (activeTimer?.status === 'finished') {
-      setState((current) => dismissTaskTimer(current))
-      setIsFocusOverlayOpen(false)
-      setIsFocusDockVisible(false)
-      return
-    }
-
-    if (activeTimer?.status === 'running') {
-      setState((current) => pauseTaskTimer(current))
-    }
-
+    setState((current) => dismissTaskTimer(current))
     setIsFocusOverlayOpen(false)
     setIsFocusDockVisible(false)
   }
@@ -254,11 +258,12 @@ export function App() {
   const dashboardPanels = useMemo(() => {
     const availablePanels: Array<{ id: DashboardPanelId; node: ReactNode }> = []
 
-    if (isPrivateProfile) {
+    if (isPrivateProfile && enabledOptionalFeatures.includes('mood')) {
       availablePanels.push({
         id: 'mood',
         node: (
           <MoodCheckCard
+            language={language}
             entries={profileState.moodEntries}
             today={state.today}
             onSave={(entry) => setState((current) => saveMoodEntry(current, entry))}
@@ -271,10 +276,11 @@ export function App() {
       id: 'overview',
       node: (
         <DashboardScreen
+          language={language}
           moodEntries={profileState.moodEntries}
           tasks={profileState.tasks}
           today={state.today}
-          profileLabel={state.activeProfile === 'private' ? 'Prive' : 'Werk'}
+          profileLabel={profileLabel}
           trackCount={tracks.length}
           quickCaptureCount={profileState.captureNodes.length}
         />
@@ -294,16 +300,19 @@ export function App() {
           onStartTimer={handleStartFocus}
           onPauseTimer={handlePauseFocus}
           onResumeTimer={handleResumeFocus}
-          profileLabel={state.activeProfile === 'private' ? 'Prive' : 'Werk'}
+          profileLabel={profileLabel}
+          language={language}
+          categories={profileSettings.taskCategories}
         />
       ),
     })
 
-    if (isPrivateProfile) {
+    if (isPrivateProfile && enabledOptionalFeatures.includes('audio')) {
       availablePanels.push({
         id: 'audio',
         node: (
           <AudioLibrary
+            language={language}
             tracks={tracks}
             error={audioError}
             onUpload={handleAudioUpload}
@@ -324,12 +333,15 @@ export function App() {
   }, [
     activeTimer,
     audioError,
+    enabledOptionalFeatures,
     isPrivateProfile,
+    language,
+    profileLabel,
+    profileSettings.taskCategories,
     profileState.captureNodes.length,
     profileState.dashboardPanelOrder,
     profileState.moodEntries,
     profileState.tasks,
-    state.activeProfile,
     state.today,
     tracks,
   ])
@@ -356,65 +368,55 @@ export function App() {
 
   return (
     <div className="app-shell">
-      <header className="hero-card">
-        <div>
-          <p className="eyebrow">Focus Flow</p>
-          <div className="profile-switch" aria-label="Profiel wisselen">
-            {profiles.map((profile) => (
+      <header className="hero-card hero-card-compact">
+        <div className="hero-primary">
+          <div>
+            <p className="eyebrow">Focus Flow</p>
+            <h1>Focus Flow</h1>
+          </div>
+          <div className="profile-switch" aria-label={language === 'en' ? 'Switch profile' : 'Profiel wisselen'}>
+            {(['private', 'work'] as ProfileId[]).map((profileId) => (
               <button
-                key={profile.id}
+                key={profileId}
                 type="button"
-                className={profile.id === state.activeProfile ? 'profile-pill active' : 'profile-pill'}
-                onClick={() => setState((current) => switchProfile(current, profile.id))}
+                className={profileId === state.activeProfile ? 'profile-pill active' : 'profile-pill'}
+                onClick={() => setState((current) => switchProfile(current, profileId))}
               >
-                {profile.label}
+                {getProfileLabel(profileId, language)}
               </button>
             ))}
           </div>
-          <h1>Planning en voortgang in een lokaal dashboard.</h1>
-          <p className="hero-copy">
-            {isPrivateProfile
-              ? 'Beheer je check-ins, taken, losse ideeën en audio lokaal in je privémodus.'
-              : 'Gebruik de werkmodus voor taken, quick capture en opvolging richting agenda, mail of herinneringen.'}
-          </p>
-          <div className="transfer-row">
-            <button type="button" className="secondary-button" onClick={handleExport}>Export</button>
-            <label className="secondary-button import-button">
-              Import
-              <input type="file" accept="application/json" onChange={(event) => void handleImport(event.target.files)} />
-            </label>
-          </div>
-          {transferMessage && <p className="helper-copy">{transferMessage}</p>}
         </div>
+
         <div className="hero-stats">
           {isPrivateProfile && (
             <div>
-              <span className="stat-label">Check-in vandaag</span>
-              <strong>{todayMood ? todayMood.label : 'Nog niet gedaan'}</strong>
+              <span className="stat-label">{language === 'en' ? 'Today check-in' : 'Check-in vandaag'}</span>
+              <strong>{todayMood ? todayMood.label : language === 'en' ? 'Not done yet' : 'Nog niet gedaan'}</strong>
             </div>
           )}
           <div>
-            <span className="stat-label">Taken afgerond</span>
+            <span className="stat-label">{language === 'en' ? 'Tasks completed' : 'Taken afgerond'}</span>
             <strong>{completedToday}</strong>
           </div>
           <div>
-            <span className="stat-label">Belangrijke open taken</span>
+            <span className="stat-label">{language === 'en' ? 'Important open tasks' : 'Belangrijke open taken'}</span>
             <strong>{importantOpenTasks}</strong>
           </div>
           {isPrivateProfile && (
             <div>
-              <span className="stat-label">Mindfulness tracks</span>
+              <span className="stat-label">{language === 'en' ? 'Mindfulness tracks' : 'Mindfulness tracks'}</span>
               <strong>{tracks.length}</strong>
             </div>
           )}
           <div>
-            <span className="stat-label">Ideeen</span>
+            <span className="stat-label">{language === 'en' ? 'Ideas' : 'Ideeen'}</span>
             <strong>{profileState.captureNodes.length}</strong>
           </div>
         </div>
       </header>
 
-      <nav className="tab-bar" aria-label="Hoofdnavigatie">
+      <nav className="tab-bar" aria-label={language === 'en' ? 'Main navigation' : 'Hoofdnavigatie'}>
         {sections.map((section) => (
           <button
             key={section.id}
@@ -442,7 +444,7 @@ export function App() {
                   type="button"
                   className="panel-drag-handle"
                   draggable
-                  aria-label="Versleep dashboardmodule"
+                  aria-label={language === 'en' ? 'Drag dashboard module' : 'Versleep dashboardmodule'}
                   onDragStart={() => setDraggedPanelId(panel.id)}
                   onDragEnd={() => setDraggedPanelId(null)}
                 >
@@ -459,8 +461,9 @@ export function App() {
           </div>
         )}
 
-        {isPrivateProfile && activeSection === 'mood' && (
+        {isPrivateProfile && activeSection === 'mood' && enabledOptionalFeatures.includes('mood') && (
           <MoodCheckCard
+            language={language}
             entries={profileState.moodEntries}
             today={state.today}
             onSave={(entry) => setState((current) => saveMoodEntry(current, entry))}
@@ -478,12 +481,15 @@ export function App() {
             onStartTimer={handleStartFocus}
             onPauseTimer={handlePauseFocus}
             onResumeTimer={handleResumeFocus}
-            profileLabel={state.activeProfile === 'private' ? 'Prive' : 'Werk'}
+            profileLabel={profileLabel}
+            language={language}
+            categories={profileSettings.taskCategories}
           />
         )}
 
         {activeSection === 'stats' && (
           <StatsScreen
+            language={language}
             profileId={state.activeProfile}
             moodEntries={profileState.moodEntries}
             tasks={profileState.tasks}
@@ -493,6 +499,7 @@ export function App() {
 
         {activeSection === 'capture' && (
           <QuickCaptureBoard
+            language={language}
             nodes={profileState.captureNodes}
             links={profileState.captureLinks}
             onAddNode={() => setState((current) => addCaptureNode(current))}
@@ -503,23 +510,74 @@ export function App() {
           />
         )}
 
-        {activeSection === 'audio' && (
-          isPrivateProfile && (
+        {activeSection === 'audio' && isPrivateProfile && enabledOptionalFeatures.includes('audio') && (
           <AudioLibrary
+            language={language}
             tracks={tracks}
             error={audioError}
             onUpload={handleAudioUpload}
             onDelete={handleAudioDelete}
             onRename={handleAudioRename}
           />
-          )
         )}
 
-        {activeSection === 'social' && <SocialScreen />}
+        {activeSection === 'social' && <SocialScreen language={language} />}
+
+        {activeSection === 'add' && (
+          <FeatureLibraryScreen
+            language={language}
+            profileId={state.activeProfile}
+            enabledFeatures={enabledOptionalFeatures}
+            onToggleFeature={(featureId) => setState((current) => toggleOptionalFeature(current, current.activeProfile, featureId))}
+          />
+        )}
+
+        {activeSection === 'settings' && (
+          <SettingsScreen
+            language={language}
+            profileLabel={profileLabel}
+            categories={profileSettings.taskCategories}
+            transferMessage={transferMessage}
+            onLanguageChange={(nextLanguage) => setState((current) => updateLanguage(current, nextLanguage))}
+            onExport={handleExport}
+            onImport={handleImport}
+            onAddCategory={(category) => {
+              const value = category.trim()
+
+              if (!value) {
+                return
+              }
+
+              setState((current) => {
+                const currentCategories = current.settings.profiles[current.activeProfile].taskCategories
+                if (currentCategories.includes(value)) {
+                  return current
+                }
+
+                return updateTaskCategories(current, current.activeProfile, [...currentCategories, value])
+              })
+            }}
+            onRemoveCategory={(category) => {
+              setState((current) => {
+                const currentCategories = current.settings.profiles[current.activeProfile].taskCategories
+                if (currentCategories.length <= 1) {
+                  return current
+                }
+
+                return updateTaskCategories(
+                  current,
+                  current.activeProfile,
+                  currentCategories.filter((item) => item !== category),
+                )
+              })
+            }}
+          />
+        )}
       </main>
 
-      {activeTimer && activeTimerTask && (isFocusOverlayOpen || activeTimer.status === 'finished') && (
+      {activeTimer && activeTimerTask && isFocusOverlayOpen && (
         <FocusTimerPanel
+          language={language}
           timer={activeTimer}
           task={activeTimerTask}
           onPause={handlePauseFocus}
@@ -532,7 +590,7 @@ export function App() {
       )}
 
       {activeTimer && activeTimerTask && isFocusDockVisible && activeTimer.status !== 'finished' && (
-        <FocusTimerDock timer={activeTimer} task={activeTimerTask} onRestore={handleRestoreFocus} />
+        <FocusTimerDock language={language} timer={activeTimer} task={activeTimerTask} onRestore={handleRestoreFocus} />
       )}
     </div>
   )
