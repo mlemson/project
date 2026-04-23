@@ -5,6 +5,7 @@ import {
   createDefaultIntegrations,
   getWeekdayLabel,
   isTaskCompleted,
+  openTaskCalendar,
   parseTaskDraft,
 } from '../../lib/tasks/taskIntelligence'
 import type { FocusTimerState, TaskItem, Weekday } from '../../lib/storage/types'
@@ -128,7 +129,11 @@ export function TaskBoard({
     })
 
     if (integrations.calendar) {
-      window.open(actions.calendarUrl, '_blank', 'noopener,noreferrer')
+      openTaskCalendar({
+        title: parsed.title,
+        category: parsed.category,
+        reminderHint: reminderHint.trim() || parsed.reminderHint,
+      })
     }
     if (integrations.mail) {
       window.location.href = actions.mailUrl
@@ -363,7 +368,7 @@ function TaskCard({
               {timerButtonLabel}
             </button>
           )}
-          <button type="button" className="mini-button" onClick={() => window.open(actions.calendarUrl, '_blank', 'noopener,noreferrer')}>
+          <button type="button" className="mini-button" onClick={() => openTaskCalendar(task)}>
             Agenda
           </button>
           <button type="button" className="mini-button" onClick={() => { window.location.href = actions.mailUrl }}>

@@ -22,6 +22,8 @@ export interface TaskActions {
   alarmText: string
 }
 
+type CalendarTaskDetails = Pick<TaskItem, 'title' | 'category' | 'reminderHint'>
+
 export function parseTaskDraft(input: string, fallbackCategory: string): ParsedTaskDraft {
   const compactInput = input.trim().replace(/\s+/g, ' ')
   const isWeekly = weekdayPattern.test(compactInput)
@@ -46,9 +48,9 @@ export function parseTaskDraft(input: string, fallbackCategory: string): ParsedT
   }
 }
 
-export function buildTaskActions(task: Pick<TaskItem, 'title' | 'category' | 'reminderHint'>): TaskActions {
+export function buildTaskActions(task: CalendarTaskDetails): TaskActions {
   const details = `${task.category} - ${task.reminderHint}`
-  const calendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(task.title)}&details=${encodeURIComponent(details)}`
+  const calendarUrl = `https://outlook.office.com/calendar/0/deeplink/compose?subject=${encodeURIComponent(task.title)}&body=${encodeURIComponent(details)}`
   const mailUrl = `mailto:?subject=${encodeURIComponent(task.title)}&body=${encodeURIComponent(`${task.title}\n\n${task.reminderHint}`)}`
 
   return {
@@ -56,6 +58,20 @@ export function buildTaskActions(task: Pick<TaskItem, 'title' | 'category' | 're
     mailUrl,
     alarmText: `${task.title} - ${task.reminderHint}`,
   }
+}
+
+export function openTaskCalendar(task: CalendarTaskDetails) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  if (prefersIPhoneCalendar()) {
+    window.location.href = 'calshow:'
+    return
+  }
+
+  const actions = buildTaskActions(task)
+  window.open(actions.calendarUrl, '_blank', 'noopener,noreferrer')
 }
 
 export function taskDraftFromCapture(node: QuickCaptureNode): ParsedTaskDraft {
@@ -144,4 +160,12 @@ function buildReminderHint(input: string, isWeekly: boolean, mentionsTomorrow: b
   }
 
   return 'Voeg dit desgewenst toe aan je agenda, mail of wekker.'
+}
+
+function prefersIPhoneCalendar() {
+  if (typeof navigator === 'undefined') {
+    return false
+  }
+
+  return /iPhone|iPod/i.test(navigator.userAgent)
 }

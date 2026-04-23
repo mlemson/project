@@ -1085,25 +1085,30 @@ button {
 @media (max-width: 899px) {
   .app-shell {
     width: min(100%, calc(100% - 1rem));
-    padding: 0.75rem 0 2rem;
+    padding: 0.75rem 0 calc(6.75rem + env(safe-area-inset-bottom, 0px));
     gap: 0.75rem;
   }
 
   .tab-bar {
-    order: -1;
-    position: sticky;
-    top: 0;
+    position: fixed;
+    left: 0.5rem;
+    right: 0.5rem;
+    bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
     z-index: 20;
     margin: 0;
-    padding: 0 0 0.4rem;
-    background: linear-gradient(180deg, rgba(247, 241, 232, 0.96) 0%, rgba(247, 241, 232, 0.78) 75%, rgba(247, 241, 232, 0) 100%);
+    padding: 0.45rem;
+    border: 1px solid rgba(23, 32, 51, 0.1);
+    border-radius: 24px;
+    background: rgba(255, 250, 244, 0.94);
+    box-shadow: 0 18px 44px rgba(12, 18, 30, 0.16);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
   }
 
   .tab {
     flex: 0 0 auto;
     border-radius: 18px;
     padding: 0.8rem 1rem;
-    min-width: fit-content;
     white-space: nowrap;
   }
 
@@ -1114,6 +1119,14 @@ button {
 
   .hero-copy {
     margin-top: 0.5rem;
+  }
+
+  .focus-timer-dock {
+    right: 0.75rem;
+    bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
+    left: 0.75rem;
+    min-width: 0;
+    max-width: none;
   }
 
   .transfer-row {

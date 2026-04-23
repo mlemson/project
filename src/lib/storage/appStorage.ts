@@ -70,12 +70,14 @@ export function saveMoodEntry(state: AppState, entry: MoodEntry): AppState {
 
 export function toggleTaskCompletion(state: AppState, taskId: string): AppState {
   const activeProfile = getActiveProfile(state)
+  const shouldResetTimer = activeProfile.activeTimer?.taskId === taskId
   const nextState = {
     ...state,
     profiles: {
       ...state.profiles,
       [state.activeProfile]: {
         ...activeProfile,
+        activeTimer: shouldResetTimer ? undefined : activeProfile.activeTimer,
         tasks: activeProfile.tasks.map((task) =>
           task.id === taskId
             ? {

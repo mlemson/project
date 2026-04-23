@@ -236,6 +236,21 @@ export function App() {
     setIsFocusDockVisible(false)
   }
 
+  const handleToggleTask = (taskId: string) => {
+    if (activeTimer?.taskId === taskId) {
+      setIsFocusOverlayOpen(false)
+      setIsFocusDockVisible(false)
+    }
+
+    setState((current) => toggleTaskCompletion(current, taskId))
+  }
+
+  const handleCompleteFocus = () => {
+    setState((current) => completeTaskTimer(current))
+    setIsFocusOverlayOpen(true)
+    setIsFocusDockVisible(false)
+  }
+
   const dashboardPanels = useMemo(() => {
     const availablePanels: Array<{ id: DashboardPanelId; node: ReactNode }> = []
 
@@ -456,7 +471,7 @@ export function App() {
           <TaskBoard
             tasks={profileState.tasks}
             today={state.today}
-            onToggleTask={(taskId) => setState((current) => toggleTaskCompletion(current, taskId))}
+            onToggleTask={handleToggleTask}
             onDeleteTask={(taskId) => setState((current) => deleteTask(current, taskId))}
             onAddTask={handleTaskAdd}
             activeTimer={activeTimer}
@@ -509,6 +524,7 @@ export function App() {
           task={activeTimerTask}
           onPause={handlePauseFocus}
           onResume={handleResumeFocus}
+          onComplete={handleCompleteFocus}
           onAdjust={(minutesDelta) => setState((current) => adjustTaskTimer(current, minutesDelta))}
           onMinimize={handleMinimizeFocus}
           onClose={handleCloseFocus}

@@ -6,12 +6,13 @@ interface FocusTimerPanelProps {
   task: TaskItem
   onPause: () => void
   onResume: () => void
+  onComplete: () => void
   onAdjust: (minutesDelta: number) => void
   onMinimize: () => void
   onClose: () => void
 }
 
-export function FocusTimerPanel({ timer, task, onPause, onResume, onAdjust, onMinimize, onClose }: FocusTimerPanelProps) {
+export function FocusTimerPanel({ timer, task, onPause, onResume, onComplete, onAdjust, onMinimize, onClose }: FocusTimerPanelProps) {
   const [customMinutes, setCustomMinutes] = useState(5)
   const [remainingSeconds, setRemainingSeconds] = useState(() => getRemainingSeconds(timer))
   const announcedCompletionRef = useRef<string | undefined>(undefined)
@@ -103,6 +104,9 @@ export function FocusTimerPanel({ timer, task, onPause, onResume, onAdjust, onMi
           <div className="timer-action-row">
             <button type="button" className="primary-button" onClick={timer.status === 'running' ? onPause : onResume}>
               {timer.status === 'running' ? 'Pauzeer focus' : 'Hervat focus'}
+            </button>
+            <button type="button" className="secondary-button secondary-button-strong" onClick={onComplete}>
+              Klaar
             </button>
             <button type="button" className="secondary-button" onClick={() => onAdjust(5)}>
               +5 min
